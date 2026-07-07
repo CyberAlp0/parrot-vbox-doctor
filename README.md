@@ -242,7 +242,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **CyberSkii** — Cybersecurity & AI Academy
 
 - Website: [cyberskii.com](https://cyberskii.com)
-- GitHub: [@CyberSkii](https://github.com/CyberSkii)
+- GitHub: [@CyberAlp0](https://github.com/CyberAlp0)
 
 ---
 

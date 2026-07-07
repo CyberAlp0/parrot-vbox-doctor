@@ -75,7 +75,7 @@ sudo ./parrot_vm_check_v2.sh
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
 ║     🦜 Parrot OS VirtualBox Verification Suite v2.0 🦜           ║
-║                      Lambda Tech                                  ║
+║                       CyberSkii                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -239,10 +239,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-**Lambda Tech** — Cybersecurity & AI Academy
+**CyberSkii** — Cybersecurity & AI Academy
 
-- Website: [lambdatech.sa](https://lambdatech.sa)
-- GitHub: [@lambdatech](https://github.com/lambdatech)
+- Website: [cyberskii.com](https://cyberskii.com)
+- GitHub: [@CyberSkii](https://github.com/CyberSkii)
 
 ---
 

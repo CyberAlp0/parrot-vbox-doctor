@@ -1,0 +1,6 @@
+# Enforce consistent line endings across platforms.
+# Shell scripts MUST use LF or they fail on Linux with `bad interpreter: /bin/bash^M`.
+* text=auto eol=lf
+*.sh text eol=lf
+LICENSE text eol=lf
+*.md text eol=lf

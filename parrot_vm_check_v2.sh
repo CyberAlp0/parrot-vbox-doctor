@@ -742,6 +742,14 @@ check_startup_services() {
         ["avahi-daemon"]="Network discovery - can usually be disabled"
         ["accounts-daemon"]="User account service - can sometimes be disabled"
         ["NetworkManager-wait-online"]="Waits for network - often slows boot"
+        ["plymouth-quit-wait"]="Boot splash animation - cosmetic only, often wastes 15-35s"
+        ["apt-daily-upgrade"]="Auto package upgrades on boot - run updates manually instead"
+        ["samba-ad-dc"]="Samba AD domain controller - disable unless running AD"
+        ["isc-dhcp-server"]="DHCP server daemon - disable unless serving DHCP"
+        ["cpupower-gui"]="CPU frequency scaling GUI - unnecessary in a VM"
+        ["cpupower-gui-helper"]="Helper for CPU frequency GUI - unnecessary in a VM"
+        ["lm-sensors"]="Hardware temperature sensors - do not work in VMs"
+        ["ptunnel"]="ICMP tunneling - only needed during specific engagements"
     )
     
     ENABLED_OPTIONAL=0
@@ -1671,6 +1679,12 @@ show_optimization_table() {
     echo -e "${CYAN}├────────────────────────────┬───────────────────────────────────┬─────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│${NC} ${WHITE}Service${NC}                    ${CYAN}│${NC} ${WHITE}Purpose${NC}                           ${CYAN}│${NC} ${WHITE}Disable Command${NC}                       ${CYAN}│${NC}"
     echo -e "${CYAN}├────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC} plymouth-quit-wait         ${CYAN}│${NC} Boot splash (cosmetic)            ${CYAN}│${NC} sudo systemctl mask plymouth-quit-wait  ${CYAN}│${NC}"
+    echo -e "${CYAN}├────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC} apt-daily-upgrade          ${CYAN}│${NC} Auto upgrades at boot             ${CYAN}│${NC} sudo systemctl mask apt-daily-upgrade   ${CYAN}│${NC}"
+    echo -e "${CYAN}├────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC} lm-sensors                 ${CYAN}│${NC} Sensors (no-op in a VM)           ${CYAN}│${NC} sudo systemctl disable lm-sensors       ${CYAN}│${NC}"
+    echo -e "${CYAN}├────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│${NC} postgresql                 ${CYAN}│${NC} Database server                   ${CYAN}│${NC} sudo systemctl disable postgresql       ${CYAN}│${NC}"
     echo -e "${CYAN}├────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│${NC} docker                     ${CYAN}│${NC} Container runtime                 ${CYAN}│${NC} sudo systemctl disable docker           ${CYAN}│${NC}"
@@ -1773,12 +1787,12 @@ show_menu() {
     echo ""
     echo -e "${BOLD}Select optimization to apply:${NC}"
     echo ""
-    echo "  1) Disable unnecessary startup services (postgresql, docker, cups, etc.)"
-    echo "  2) Optimize system settings (swappiness, cache)"
+    echo "  1) Disable unnecessary startup services (postgresql, docker, plymouth, etc.)"
+    echo "  2) Optimize system settings (swappiness, cache, GRUB boot timeout)"
     echo "  3) Install preload (faster app launching)"
     echo "  4) Install lighter browser (Chromium)"
     echo "  5) Disable KDE desktop effects"
-    echo "  6) Disable tracker file indexer"
+    echo "  6) Disable tracker / Baloo file indexer"
     echo "  7) Clean system (apt cache, old packages)"
     echo "  8) Clear RAM cache (temporary boost)"
     echo "  9) Apply ALL optimizations"
@@ -1801,8 +1815,15 @@ disable_services() {
         "avahi-daemon"
         "accounts-daemon"
         "NetworkManager-wait-online"
+        "apt-daily-upgrade"
+        "samba-ad-dc"
+        "isc-dhcp-server"
+        "cpupower-gui"
+        "cpupower-gui-helper"
+        "lm-sensors"
+        "ptunnel"
     )
-    
+
     for svc in "${SERVICES[@]}"; do
         if systemctl is-enabled "$svc" &>/dev/null 2>&1; then
             systemctl disable "$svc" 2>/dev/null
@@ -1810,7 +1831,16 @@ disable_services() {
             echo -e "  ${GREEN}[✓]${NC} Disabled: $svc"
         fi
     done
-    
+
+    # Plymouth (boot splash) is a common boot-time offender. It often survives
+    # 'disable' because other units depend on it, so mask it to force it off.
+    for svc in "plymouth-quit-wait" "plymouth"; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\.service"; then
+            systemctl mask "${svc}.service" 2>/dev/null
+            echo -e "  ${GREEN}[✓]${NC} Masked: ${svc} (boot splash)"
+        fi
+    done
+
     echo -e "${GREEN}[✓] Services optimization complete${NC}"
 }
 
@@ -1831,10 +1861,29 @@ optimize_system() {
         echo "vm.vfs_cache_pressure=50" >> /etc/sysctl.conf
         echo -e "  ${GREEN}[✓]${NC} Set vfs_cache_pressure to 50"
     fi
-    
+
     # Apply changes
     sysctl -p &>/dev/null
-    
+
+    # Reduce GRUB menu timeout so the machine boots straight through instead of
+    # pausing at the boot menu for several seconds every start.
+    if [ -f /etc/default/grub ]; then
+        if grep -q "^GRUB_TIMEOUT=" /etc/default/grub; then
+            CURRENT_TIMEOUT=$(grep "^GRUB_TIMEOUT=" /etc/default/grub | head -1 | cut -d= -f2)
+            if [ "$CURRENT_TIMEOUT" != "0" ]; then
+                sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
+                update-grub &>/dev/null && \
+                    echo -e "  ${GREEN}[✓]${NC} Reduced GRUB boot menu timeout to 0s (was ${CURRENT_TIMEOUT}s)"
+            else
+                echo -e "  ${CYAN}[i]${NC} GRUB timeout already 0"
+            fi
+        else
+            echo "GRUB_TIMEOUT=0" >> /etc/default/grub
+            update-grub &>/dev/null && \
+                echo -e "  ${GREEN}[✓]${NC} Set GRUB boot menu timeout to 0s"
+        fi
+    fi
+
     echo -e "${GREEN}[✓] System settings optimization complete${NC}"
 }
 
@@ -1907,11 +1956,17 @@ disable_tracker() {
     
     # Reset tracker
     su - "$REAL_USER" -c "tracker reset --hard" 2>/dev/null
-    
+
     # Kill any running tracker processes
     pkill -f tracker 2>/dev/null
-    
-    echo -e "${GREEN}[✓] Tracker disabled${NC}"
+
+    # KDE editions use Baloo instead of tracker - disable it too if present.
+    if su - "$REAL_USER" -c "command -v balooctl" &>/dev/null; then
+        su - "$REAL_USER" -c "balooctl disable" 2>/dev/null
+        echo -e "  ${GREEN}[✓]${NC} Baloo file indexer disabled (KDE)"
+    fi
+
+    echo -e "${GREEN}[✓] Tracker/Baloo disabled${NC}"
 }
 
 # Function: Clean system
@@ -2017,12 +2072,12 @@ OPTSCRIPT
     echo -e "  ${WHITE}Run with: ${CYAN}sudo bash ${OPT_SCRIPT}${NC}"
     echo ""
     echo -e "  ${BOLD}The script provides a menu to:${NC}"
-    echo "    1) Disable unnecessary startup services"
-    echo "    2) Optimize system settings (swappiness)"
+    echo "    1) Disable unnecessary startup services (incl. plymouth boot splash)"
+    echo "    2) Optimize system settings (swappiness, cache, GRUB boot timeout)"
     echo "    3) Install preload for faster app launching"
     echo "    4) Install Chromium (lighter browser)"
     echo "    5) Disable KDE desktop effects"
-    echo "    6) Disable tracker file indexer"
+    echo "    6) Disable tracker / Baloo file indexer"
     echo "    7) Clean system cache"
     echo "    8) Clear RAM cache"
     echo "    9) Apply ALL optimizations at once"

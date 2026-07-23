@@ -131,12 +131,12 @@ sudo bash /tmp/parrot_optimize.sh
 
 **Menu Options:**
 ```
-  1) Disable unnecessary startup services
-  2) Optimize system settings (swappiness)
+  1) Disable unnecessary startup services (incl. plymouth boot splash)
+  2) Optimize system settings (swappiness, cache, GRUB boot timeout)
   3) Install preload (faster app launching)
   4) Install lighter browser (Chromium)
   5) Disable KDE desktop effects
-  6) Disable tracker file indexer
+  6) Disable tracker / Baloo file indexer
   7) Clean system (apt cache, old packages)
   8) Clear RAM cache (temporary boost)
   9) Apply ALL optimizations
@@ -165,7 +165,16 @@ VBoxClient --clipboard &
 # Disable slow services
 sudo systemctl disable postgresql docker cups bluetooth
 sudo systemctl disable NetworkManager-wait-online
+sudo systemctl disable apt-daily-upgrade lm-sensors
+
+# Mask the boot splash (often the single biggest offender, 15-35s)
+sudo systemctl mask plymouth-quit-wait.service plymouth.service
+
+# Skip the GRUB menu countdown
+sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub && sudo update-grub
 ```
+
+> See the full [Boot Optimization](#-boot-optimization-faster-virtualbox-startup) section below for the complete walkthrough, or just run the generated optimizer (`sudo bash /tmp/parrot_optimize.sh`) which applies all of this for you.
 
 ### Poor Performance
 
@@ -188,6 +197,123 @@ sudo mount /dev/cdrom /mnt/cdrom
 sudo /mnt/cdrom/VBoxLinuxAdditions.run
 sudo reboot
 ```
+
+---
+
+## 🚀 Boot Optimization (Faster VirtualBox Startup)
+
+A slow-booting VM is the most common complaint when running Parrot OS (or Kali) inside VirtualBox. Boot times of **3+ minutes** are usually caused by a handful of unnecessary services, the GRUB menu countdown, and the boot splash animation. The steps below cut that down to roughly **1 minute or less**.
+
+> 💡 The verification script detects these issues automatically, and the generated optimizer (`sudo bash /tmp/parrot_optimize.sh`) applies every fix in this section for you. This guide documents what it does so you can also do it by hand.
+
+### Step 1 — Diagnose
+
+```bash
+# Total boot time (kernel + userspace split)
+systemd-analyze
+
+# Top 20 slowest services during boot
+systemd-analyze blame | head -20
+```
+
+### Step 2 — Disable / Mask Slow Services
+
+These services commonly waste boot time and are **not required** for a pentesting VM:
+
+| Service | What It Does | Why You Don't Need It |
+|---------|--------------|-----------------------|
+| `plymouth-quit-wait.service` | Boot splash animation | Cosmetic only — often wastes 15–35s |
+| `apt-daily-upgrade.service` | Auto package upgrades on boot | Run updates manually instead |
+| `samba-ad-dc.service` | Samba AD domain controller | Not needed unless running AD |
+| `isc-dhcp-server.service` | DHCP server daemon | Not needed unless serving DHCP |
+| `cpupower-gui.service` | CPU frequency scaling GUI | Unnecessary in a VM |
+| `cpupower-gui-helper.service` | Helper for the CPU frequency GUI | Unnecessary in a VM |
+| `lm-sensors.service` | Hardware temperature sensors | Sensors don't work in VMs |
+| `ptunnel.service` | ICMP tunneling | Only needed during specific engagements |
+
+```bash
+sudo systemctl disable apt-daily-upgrade.service samba-ad-dc.service \
+    isc-dhcp-server.service cpupower-gui.service cpupower-gui-helper.service \
+    lm-sensors.service ptunnel.service
+```
+
+If `plymouth-quit-wait` still appears in `systemd-analyze blame` after disabling, **mask** it — this is stronger than `disable` and prevents it starting even when another unit depends on it:
+
+```bash
+sudo systemctl mask plymouth-quit-wait.service plymouth.service
+```
+
+### Step 3 — Reduce the GRUB Timeout
+
+By default GRUB pauses several seconds at the boot menu. Set it to zero:
+
+```bash
+sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
+sudo update-grub
+```
+
+### Step 4 — Optimize VirtualBox VM Settings
+
+Power off the VM and adjust these in **VirtualBox → Settings**:
+
+- **Display:** Graphics Controller → **VBoxSVGA**, Video Memory → **128 MB**, enable **3D Acceleration**
+- **Processor:** at least **2 CPUs** (4 if the host allows), enable **PAE/NX**
+- **Memory:** at least **4 GB RAM** (8 GB recommended)
+- **Storage:** put the VM disk on an **SSD**; prefer a **fixed-size** disk over dynamically allocated (faster I/O)
+- **System → Boot:** uncheck **Enable EFI** (BIOS boot is faster for VMs)
+
+### Step 5 — Install Guest Additions
+
+Improves display performance, enables shared clipboard, and fixes display-driver issues:
+
+```bash
+sudo apt update
+sudo apt install -y virtualbox-guest-x11 virtualbox-guest-utils virtualbox-guest-dkms
+sudo reboot
+```
+
+### Step 6 — Reduce Swap & Disable Desktop Extras
+
+```bash
+# Use RAM more, swap less (make permanent via /etc/sysctl.conf)
+sudo sysctl vm.swappiness=10
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+
+# KDE editions: disable the Baloo file indexer
+balooctl disable
+
+# XFCE editions: stop the screensaver/power manager from hanging an idle VM
+xfce4-screensaver-command --disable
+xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -s false
+```
+
+### Fixing the `vmwgfx` Display Error
+
+If you see this during boot:
+
+```
+vmwgfx: seems to be running on an unsupported hypervisor
+vmwgfx: This configuration is likely broken
+```
+
+The VMware graphics driver (`vmwgfx`) is loaded while you're on VirtualBox. Fix it by setting the Graphics Controller to **VBoxSVGA** in the VM's Display settings.
+
+### Expected Results
+
+| Stage | Before | After |
+|-------|--------|-------|
+| Total Boot Time | ~3 min 20 s | ~1 min or less |
+| Userspace | ~2 min 50 s | ~45 s |
+| Top Offenders | 8+ unnecessary services | Only essential services remain |
+
+### ⚠️ Services to KEEP (do not disable)
+
+- `vboxadd.service` — VirtualBox Guest Additions
+- `NetworkManager.service` — Network connectivity
+- `systemd-modules-load.service` — Kernel modules
+- `lightdm.service` / `sddm.service` — Desktop login manager
+- `systemd-journald.service` — System logging
+- `dbus.service` — Inter-process communication
 
 ---
 
@@ -257,6 +383,13 @@ If this toolkit helped you, please consider:
 ---
 
 ## 📜 Changelog
+
+### v2.1 (2025)
+- Added a dedicated **Boot Optimization** guide for faster VirtualBox startup
+- Detect more boot-slowing services (plymouth, apt-daily-upgrade, samba-ad-dc, isc-dhcp-server, cpupower-gui, lm-sensors, ptunnel)
+- Optimizer now **masks** the Plymouth boot splash (the most common offender)
+- Optimizer now reduces the **GRUB boot menu timeout** to 0
+- Optimizer now disables the **Baloo** file indexer on KDE editions
 
 ### v2.0 (2025)
 - Added boot time analysis

@@ -12,6 +12,8 @@
 
 Setting up a penetration testing VM in VirtualBox comes with many challenges: clipboard not working, slow performance, display issues, and more. This toolkit automates the detection and fixing of these common issues.
 
+> ℹ️ **How it works:** The main script (`parrot_vm_check_v2.sh`) only **inspects and reports** — it never changes your system. To apply fixes, you separately run the generated optimizer (`sudo bash /tmp/parrot_optimize.sh`) and choose exactly what to apply from its menu. Nothing is disabled or stopped without your explicit choice.
+
 ### Features
 
 ✅ **17+ System Checks** — Guest Additions, clipboard, graphics, performance, and more  
